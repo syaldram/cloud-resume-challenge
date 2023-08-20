@@ -14,3 +14,8 @@ variable "bucket_policy" {
   default     = ""
   description = "The bucket policy to apply to the bucket, defaults to a policy that only allows SSL requests"
 }
+
+variable "cfn_arn" {
+  type = string
+  description = "ARN for cloud front distriubtion."
+}

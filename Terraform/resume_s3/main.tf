@@ -4,36 +4,31 @@ data "aws_caller_identity" "current" {}
 locals {
   # use default policy if none provided
   bucket_policy = var.bucket_policy != "" ? var.bucket_policy : jsonencode(
-    {
-      "Version" : "2012-10-17",
-      "Statement" : [
-        {
-          "Sid" : "AllowSSLRequestsOnly",
-          "Effect" : "Deny",
-          "Principal" : "*",
-          "Action" : "s3:*",
-          "Resource" : [
-            "arn:aws:s3:::${var.bucket_name}",
-            "arn:aws:s3:::${var.bucket_name}/*"
-          ],
-          "Condition" : {
-            "Bool" : {
-              "aws:SecureTransport" : "false"
+{
+        "Version": "2008-10-17",
+        "Id": "PolicyForCloudFrontPrivateContent",
+        "Statement": [
+            {
+                "Sid": "AllowCloudFrontServicePrincipal",
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "cloudfront.amazonaws.com"
+                },
+                "Action": "s3:GetObject",
+                "Resource": [
+                  "arn:aws:s3:::${var.bucket_name}",
+                  "arn:aws:s3:::${var.bucket_name}/*"
+                ],
+                "Condition": {
+                    "StringEquals": {
+                      "AWS:SourceArn": "${var.cfn_arn}"
+                    }
+                }
             }
-          }
-        },
-        {
-        "Sid" : "AllowCloudFrontAccess",
-        "Effect" : "Allow",
-        "Principal" : {
-          "AWS" : "${aws_cloudfront_origin_access_identity.resume.iam_arn}"
-        },
-        "Action" : "s3:GetObject",
-        "Resource" : "${aws_s3_bucket.resumeS3.arn}/*"
-      }
-      ]
-  })
+        ]
+      })
 }
+
 
 resource "aws_s3_bucket" "resumeS3" {
   bucket = var.bucket_name
@@ -58,4 +53,9 @@ resource "aws_s3_bucket_ownership_controls" "s3_bucket_acl_ownership" {
   rule {
     object_ownership = "ObjectWriter"
   }
+}
+
+resource "aws_s3_bucket_policy" "default" {
+  bucket = aws_s3_bucket.resumeS3.id
+  policy = local.bucket_policy
 }

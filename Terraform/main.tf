@@ -14,7 +14,6 @@ terraform {
     region         = "us-east-1"
     dynamodb_table = "terraform-state"
   }
-
 }
 
 provider "aws" {
@@ -28,7 +27,13 @@ provider "aws" {
   }
 }
 
-module "resume" {
-  source = "./resume"
-  resume_bucket = var.bucket_name
+module "resume_s3" {
+  source      = "./resume_s3"
+  bucket_name = var.bucket_name
+  cfn_arn     = module.backend.cfn_arn
+}
+
+module "backend" {
+  source      = "./backend"
+  domain_name = module.resume_s3.domain_name
 }
