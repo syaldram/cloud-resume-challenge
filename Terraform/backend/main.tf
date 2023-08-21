@@ -23,9 +23,10 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   #aliases = ["mysite.example.com", "yoursite.example.com"]
 
   default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = local.s3_origin_id
+    compress         = true
 
     forwarded_values {
       query_string = false
@@ -39,6 +40,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     min_ttl                = 0
     default_ttl            = 86400
     max_ttl                = 31536000
+
   }
 
 
