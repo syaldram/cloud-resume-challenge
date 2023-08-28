@@ -313,7 +313,7 @@ resource "aws_api_gateway_rest_api" "get_views_api" {
 resource "aws_api_gateway_resource" "resource" {
   rest_api_id = aws_api_gateway_rest_api.get_views_api.id
   parent_id   = aws_api_gateway_rest_api.get_views_api.root_resource_id
-  path_part   = "{proxy+}"
+  path_part   = "counter"
 }
 
 resource "aws_api_gateway_method" "method" {
@@ -367,7 +367,7 @@ resource "aws_iam_policy" "api_policy" {
       {
         Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Effect   = "Allow"
-        Resource = "${aws_cloudwatch_log_group.api_log_group.arn}*"
+        Resource = "*"
       }
     ]
   })
