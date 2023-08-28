@@ -34,6 +34,7 @@ module "resume_s3" {
 }
 
 module "backend" {
-  source      = "./backend"
-  domain_name = module.resume_s3.domain_name
+  source                   = "./backend"
+  domain_name              = module.resume_s3.domain_name
+  s3_bucket_lambda_package = var.s3_bucket_lambda_package
 }

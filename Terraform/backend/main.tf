@@ -1,4 +1,5 @@
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 locals {
   s3_origin_id = "SyBucketOrigin"
@@ -36,6 +37,12 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       cookies {
         forward = "none"
       }
+    }
+
+    lambda_function_association {
+      event_type   = "viewer-response"
+      lambda_arn   = module.update_viewer_count.lambda_function_qualified_arn
+      include_body = false
     }
 
     viewer_protocol_policy = "redirect-to-https"
@@ -116,4 +123,267 @@ resource "aws_dynamodb_table" "counter-db" {
     name = "CounterID"
     type = "S"
   }
+}
+
+################################################################################
+# Lambda function to update dynamoDB table before CloudFront returns a response
+################################################################################
+
+module "update_viewer_count" {
+  source  = "terraform-aws-modules/lambda/aws"
+  version = "6.0.0"
+
+  function_name  = "update_viewer_count"
+  description    = "Updates viewer count DynamoDB table before CloudFront returns a response."
+  handler        = "index.lambda_handler"
+  runtime        = "python3.10"
+  create_package = true
+  timeout        = 5
+  memory_size    = 128
+  publish        = true
+
+  source_path    = "${path.module}/post_views/"
+
+  build_in_docker          = true
+  docker_build_root        = "${path.module}/post_views/docker"
+  docker_image             = "public.ecr.aws/lambda/python:3.10"
+  store_on_s3              = true
+  s3_bucket                = var.s3_bucket_lambda_package
+  recreate_missing_package = true
+
+  create_role = false
+  lambda_role = aws_iam_role.update_viewer_count.arn
+
+}
+
+################################################################################
+# IAM role to update_viewer_count Lambda
+################################################################################
+
+resource "aws_iam_role" "update_viewer_count" {
+  name                 = "update_viewer_count"
+  managed_policy_arns  = ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"]
+  assume_role_policy = jsonencode(
+    {
+      "Version" : "2012-10-17",
+      "Statement" : [
+        {
+          "Action" : "sts:AssumeRole",
+          "Principal" : {
+            "Service" : ["lambda.amazonaws.com", "edgelambda.amazonaws.com"]
+          },
+          "Effect" : "Allow",
+          }, {
+          "Action" : "sts:AssumeRole",
+          "Principal" : {
+            "AWS" : [
+            data.aws_caller_identity.current.account_id]
+          },
+          "Effect" : "Allow",
+        }
+      ]
+  })
+}
+
+resource "aws_iam_role_policy" "update_viewer_count" {
+  name = "update_viewer_count"
+  role = aws_iam_role.update_viewer_count.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:GetItem"
+        ],
+        Effect = "Allow",
+        Resource = "${aws_dynamodb_table.counter-db.arn}"
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource" : "*"
+      },
+    ]
+  })
+}
+
+################################################################################
+# Lambda function to get viewer count from DynamoDB & send data to API Gateway
+################################################################################
+
+module "get_viewer_count" {
+  source  = "terraform-aws-modules/lambda/aws"
+  version = "6.0.0"
+
+  function_name  = "get_viewer_count"
+  description    = "Get viewer count from DynamoDB table & send data to API Gateway."
+  handler        = "index.lambda_handler"
+  runtime        = "python3.10"
+  create_package = true
+  timeout        = 30
+  memory_size    = 128
+  publish        = true
+
+  source_path    = "${path.module}/get_views/"
+
+  build_in_docker          = true
+  docker_build_root        = "${path.module}/get_views/docker"
+  docker_image             = "public.ecr.aws/lambda/python:3.10"
+  store_on_s3              = true
+  s3_bucket                = var.s3_bucket_lambda_package
+  recreate_missing_package = true
+
+  create_role = false
+  lambda_role = aws_iam_role.get_viewer_count.arn
+
+}
+
+################################################################################
+# IAM role to get_viewer_count Lambda
+################################################################################
+
+resource "aws_iam_role" "get_viewer_count" {
+  name                 = "get_viewer_count"
+  managed_policy_arns  = ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"]
+  assume_role_policy = jsonencode(
+    {
+      "Version" : "2012-10-17",
+      "Statement" : [
+        {
+          "Action" : "sts:AssumeRole",
+          "Principal" : {
+            "Service" : "lambda.amazonaws.com"
+          },
+          "Effect" : "Allow",
+          }, {
+          "Action" : "sts:AssumeRole",
+          "Principal" : {
+            "AWS" : [
+            data.aws_caller_identity.current.account_id]
+          },
+          "Effect" : "Allow",
+        }
+      ]
+  })
+}
+
+resource "aws_iam_role_policy" "get_viewer_count" {
+  name = "get_viewer_count"
+  role = aws_iam_role.get_viewer_count.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem"
+        ],
+        Effect = "Allow",
+        Resource = "${aws_dynamodb_table.counter-db.arn}"
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        "Resource" : "*"
+      },
+    ]
+  })
+}
+
+################################################################################
+# Create API Gateway for get_viewer data from web application
+################################################################################
+
+resource "aws_api_gateway_rest_api" "get_views_api" {
+  name        = "get_views_api"
+  description = "REST API with lambda integration to get dynamoDB data for web application."
+}
+
+resource "aws_api_gateway_resource" "resource" {
+  rest_api_id = aws_api_gateway_rest_api.get_views_api.id
+  parent_id   = aws_api_gateway_rest_api.get_views_api.root_resource_id
+  path_part   = "{proxy+}"
+}
+
+resource "aws_api_gateway_method" "method" {
+  rest_api_id   = aws_api_gateway_rest_api.get_views_api.id
+  resource_id   = aws_api_gateway_resource.resource.id
+  http_method   = "ANY"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "api_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.get_views_api.id
+  resource_id             = aws_api_gateway_resource.resource.id
+  http_method             = aws_api_gateway_method.method.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = module.get_viewer_count.lambda_function_invoke_arn
+}
+
+resource "aws_cloudwatch_log_group" "api_log_group" {
+  name              = "/aws/apigateway/${aws_api_gateway_rest_api.get_views_api.name}"
+  retention_in_days = 14
+}
+
+resource "aws_iam_role" "api_role" {
+  name               = "${aws_api_gateway_rest_api.get_views_api.name}-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "api_policy_attachment" {
+  role       = aws_iam_role.api_role.name
+  policy_arn = aws_iam_policy.api_policy.arn
+}
+
+resource "aws_iam_policy" "api_policy" {
+  name        = "${aws_iam_role.api_role.name}-policy"
+  description = "${aws_iam_role.api_role.name} policy"
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Effect   = "Allow"
+        Resource = "${aws_cloudwatch_log_group.api_log_group.arn}*"
+      }
+    ]
+  })
+}
+
+resource "aws_api_gateway_deployment" "api_deployment" {
+  rest_api_id       = aws_api_gateway_rest_api.get_views_api.id
+  stage_name        = "prod"
+  depends_on        = [aws_api_gateway_integration.api_integration]
+}
+
+resource "aws_lambda_permission" "api_permission" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = module.get_viewer_count.lambda_function_name
+  principal     = "apigateway.amazonaws.com"
+
+  source_arn    = "${aws_api_gateway_rest_api.get_views_api.execution_arn}/*/*/*"
 }

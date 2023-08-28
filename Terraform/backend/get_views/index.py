@@ -19,11 +19,20 @@ table = dynamodb.Table('crc-counter')
 
 def lambda_handler(event, context):
 
+    logging.info(event)
     try:
         response = table.get_item(Key={"CounterID": '1'})
-        views = response['Item']['views']
-        logging.info(f'Current total view count is ${views}.')
+        logging.info(f"getting dynamodb items ${response}")
+        views = int(response['Item']['views'])
+        logging.info(f"The total number of views in dynamodb: ${views}")
     except ClientError as e:
         logging.error(e)
-    return views
+        return {
+            'statusCode': 500,
+            'body': json.dumps('An error occurred while retrieving the viewer count.')
+        }
+    return {
+        'statusCode': 200,
+        'body': json.dumps(views)
+    }
 
