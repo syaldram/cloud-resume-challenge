@@ -32,6 +32,7 @@ def lambda_handler(event, context):
             'body': json.dumps('An error occurred while retrieving the viewer count.')
         }
     return {
+        "headers": {"Access-Control-Allow-Origin": "*"},
         'statusCode': 200,
         'body': json.dumps(views)
     }
