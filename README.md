@@ -3,6 +3,9 @@
 ## Background
 The AWS Cloud Resume Challenge is a project that builds a personal resume/portfolio website with a visitor counter, and deploy it fully through a number of AWS services. The project is inspired by :[https://cloudresumechallenge.dev/docs/the-challenge/aws/](https://cloudresumechallenge.dev/docs/the-challenge/aws/)
 
+## Website
+The personal portfolio website can be found here: [https://resume.saadyaldram.com](https://resume.saadyaldram.com)
+
 ## Diagram
 ![](docs/crc_diagram.png)
 
