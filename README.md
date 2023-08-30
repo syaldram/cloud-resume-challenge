@@ -15,5 +15,5 @@ The front end web application code can be found here in this GitHub repository: 
 ## Backend
 The backend is provisioned using infrastructure as code (IaC) Terraform. The Terraform code utilizes modules heavily to speed up the development time for the application. 
 
-## CI/CD Frontend
+## CI/CD Backend
 The GitHub Actions enabled in this project creates a workflow that automatically builds and deploys the backend application whenever the code in the Terraform directory is pushed to repository.
